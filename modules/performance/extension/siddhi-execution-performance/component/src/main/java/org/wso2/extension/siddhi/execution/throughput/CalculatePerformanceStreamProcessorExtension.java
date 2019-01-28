@@ -18,14 +18,13 @@
 
 package org.wso2.extension.siddhi.execution.throughput;
 
+
 import org.HdrHistogram.Histogram;
 import org.apache.log4j.Logger;
-import org.wso2.extension.siddhi.execution.throughput.util.filewriting.BothFileWriting;
-import org.wso2.extension.siddhi.execution.throughput.util.filewriting.LatencyFileWriting;
-import org.wso2.extension.siddhi.execution.throughput.util.filewriting.ThroughputFileWriting;
 import org.wso2.siddhi.annotation.Example;
 import org.wso2.siddhi.annotation.Extension;
 import org.wso2.siddhi.annotation.Parameter;
+import org.wso2.siddhi.annotation.ReturnAttribute;
 import org.wso2.siddhi.annotation.util.DataType;
 import org.wso2.siddhi.core.config.SiddhiAppContext;
 import org.wso2.siddhi.core.event.ComplexEventChunk;
@@ -41,25 +40,30 @@ import org.wso2.siddhi.core.util.config.ConfigReader;
 import org.wso2.siddhi.query.api.definition.AbstractDefinition;
 import org.wso2.siddhi.query.api.definition.Attribute;
 import org.wso2.siddhi.query.api.exception.SiddhiAppValidationException;
-import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
+import java.lang.management.ManagementFactory;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
+
+
+
 /**
- * Input attributes to log is (iijTimeStamp (Long), type (String) , Count(Integer) ,
- * Windowsize (Integer) , id(String)).
+ * Input attributes to log is (iijTimeStamp (Long), value (Float)).
  */
+
+
+
+
 @Extension(
         name = "throughput",
         namespace = "throughput",
@@ -68,28 +72,13 @@ import java.util.concurrent.ExecutorService;
                 @Parameter(name = "iijtimestamp",
                         description = "This value used to find the sending timestamp from client",
                         type = {DataType.LONG}),
-
-                @Parameter(name = "type",
-                        description = "This value used to specify which metric value " +
-                                "you are going to exract(\"throughput\" " +
-                                "or \"latency\" or \"both\" )",
-                        type = {DataType.STRING}),
-
-                @Parameter(name = "window.size",
-                        description = "This value used to determine for how " +
-                                "many events we are going to track the Metrics",
-                        type = {DataType.INT},
-                        optional = true,
-                        defaultValue = "1000"),
-
-                @Parameter(name = "id",
-                        description = "This value used to uniquely identify the ID of each performance " +
-                                "extension calls in the Application",
-                        type = {DataType.STRING},
-                        optional = true,
-                        defaultValue = "1"),
-
         },
+
+        returnAttributes = @ReturnAttribute(
+                name = "return",
+                description = "Returns the list of filtered email addresses as a comma separated list of email " +
+                        "addresses.",
+                type = {DataType.STRING}),
         examples = {
                 @Example(
                         syntax = "@App:name(\"TCP_Benchmark\")\n" +
@@ -122,114 +111,24 @@ import java.util.concurrent.ExecutorService;
 
 public class CalculatePerformanceStreamProcessorExtension extends StreamProcessor {
     private static final Logger log = Logger.getLogger(CalculatePerformanceStreamProcessorExtension.class);
-    private static int  recordWindow = 1000;
+    private static final int RECORDWINDOW = 2;
     private static final Histogram histogram = new Histogram(2);
     private static final Histogram histogram2 = new Histogram(2);
     private static long firstTupleTime = -1;
-    private static String logDir = "./performance-results";
     private static long eventCountTotal = 0;
     private static long eventCount = 0;
     private static long timeSpent = 0;
     private static long totalTimeSpent = 0;
-    private static long outputFileTimeStamp;
     private static long startTime = -1;
-    private static Writer fstream = null;
-    private static boolean exitFlag = false;
-    private static int sequenceNumber = 0;
     private String executionType;
     private ExecutorService executorService;
-    private boolean flag;
-    private String siddhiAppContextName;
-    private String id = "1";
+    BufferedWriter bw = null;
+    FileWriter fw = null;
+    static final String DB_URL = "jdbc:mysql://localhost:3306/test3?autoReconnect=true&useSSL=false";
+    static final String USER = "root";
+    static final String PASS = "87654321";
+    String siddhiAppContextName = "";
 
-
-    private static int setCompletedFlag(int sequenceNumber) {
-        try {
-            String content = "" + sequenceNumber;
-            File file = new File(logDir + "/completed-number.txt");
-            //if file doesn't exists, then create new file
-            if (!file.exists()) {
-                boolean fileCreateResults = file.createNewFile();
-                if (!fileCreateResults) {
-                    log.error("Error when creating completed-number.txt file.");
-                }
-            }
-            Writer fstream =
-                    new OutputStreamWriter(new FileOutputStream(file.getAbsoluteFile()), StandardCharsets.UTF_8);
-
-            fstream.write(content);
-            fstream.flush();
-            fstream.close();
-        } catch (IOException e) {
-            log.error("Error when writing performance information" + e.getMessage(), e);
-        }
-        return 0;
-    }
-
-    /**
-     * This method returns a unique integer that can be used as a sequence number for log files.
-     */
-
-    private static int getLogFileSequenceNumber() {
-        int results = -1;
-        BufferedReader br = null;
-        try {
-            String sCurrentLine;
-            File directory = new File(logDir);
-
-            if (!directory.exists()) {
-                if (!directory.mkdir()) {
-                    log.error("Error while creating the output directory");
-                }
-            }
-
-            File sequenceFile = new File(logDir + "/sequence-number.txt");
-
-            if (sequenceFile.exists()) {
-                br = new BufferedReader(new InputStreamReader(new FileInputStream(logDir + "/sequence-number.txt"),
-                        Charset.forName("UTF-8")));
-
-                while ((sCurrentLine = br.readLine()) != null) {
-                    results = Integer.parseInt(sCurrentLine);
-                    break;
-                }
-            }
-        } catch (IOException e) {
-            log.error("Error when reading the sequence number from sequence-number.txt" + e.getMessage(), e);
-        } finally {
-            try {
-                if (br != null) {
-                    br.close();
-                }
-            } catch (IOException exception) {
-                exception.printStackTrace();
-            }
-        }
-        try {
-            if (results == -1) {
-                results = 0;
-            }
-
-            String content = "" + (results + 1); //need to increment for next iteration
-            File file = new File(logDir + "/sequence-number.txt");
-
-            //if file doesn't exists, then create it
-            if (!file.exists()) {
-                boolean fileCreateResults = file.createNewFile();
-                if (!fileCreateResults) {
-                    log.error("Error when creating sequence-number.txt file.");
-                }
-            }
-            Writer fstream =
-                    new OutputStreamWriter(new FileOutputStream(file.getAbsoluteFile()), StandardCharsets.UTF_8);
-            fstream.write(content);
-            fstream.flush();
-            fstream.close();
-        } catch (IOException ex) {
-            log.error("Error when writing performance information" + ex.getMessage(), ex);
-        }
-        return results;
-    }
 
     /**
      * The init method of the StreamFunction.
@@ -243,26 +142,30 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
     @Override
     protected List<Attribute> init(AbstractDefinition inputDefinition, ExpressionExecutor[]
             attributeExpressionExecutors, ConfigReader configReader, SiddhiAppContext siddhiAppContext) {
-
         executorService = siddhiAppContext.getExecutorService();
+
         siddhiAppContextName = siddhiAppContext.getName();
+        log.info("init-@@@@@@");
 
-        if (attributeExpressionExecutors.length >= 2 && attributeExpressionExecutors.length <= 4) {
-
+        if (attributeExpressionLength == 6) {
             if (!(attributeExpressionExecutors[0] instanceof VariableExpressionExecutor)) {
                 throw new SiddhiAppValidationException("iijTimeStamp has to be a variable but found " +
-                        this.attributeExpressionExecutors[0].getClass().getCanonicalName());
+                        this.attributeExpressionExecutors[0].getClass()
+                                .getCanonicalName());
             }
 
-            if (!(attributeExpressionExecutors[0].getReturnType() == Attribute.Type.LONG)) {
-                throw new SiddhiAppValidationException("iijTimestamp is expected to be long but found "
-                        + attributeExpressionExecutors[0].getReturnType());
+            if (attributeExpressionExecutors[0].getReturnType() == Attribute.Type.LONG) {
+
+            } else {
+                throw new SiddhiAppValidationException("iijTimestamp is expected to be long but "
+                        + "found" + attributeExpressionExecutors[0]
+                        .getReturnType());
+
             }
 
             if (!(attributeExpressionExecutors[1] instanceof ConstantExpressionExecutor)) {
-                throw new SiddhiAppValidationException("Type has to be constant(throughput or " +
-                        "latency or both) but found " +
-                        this.attributeExpressionExecutors[1].getClass().getCanonicalName());
+                throw new SiddhiAppValidationException("second parameter has to be constant but found" + this
+                        .attributeExpressionExecutors[1].getClass().getCanonicalName());
             }
 
             if (attributeExpressionExecutors[1].getReturnType() == Attribute.Type.STRING) {
@@ -270,46 +173,17 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
             } else {
                 throw new SiddhiAppValidationException("Second parameter expected to be String but "
-                        + "found " + attributeExpressionExecutors[1].getReturnType());
-            }
-
-
-            if (attributeExpressionLength >= 3) {
-
-                if (!(attributeExpressionExecutors[2] instanceof ConstantExpressionExecutor)) {
-                    throw new SiddhiAppValidationException("windowSize has to be constant but " +
-                            "found " + this.attributeExpressionExecutors[2].getClass().getCanonicalName());
-                }
-
-                if (!(attributeExpressionExecutors[2].getReturnType() == Attribute.Type.INT)) {
-                    throw new SiddhiAppValidationException("windowSize expected to be long but "
-                            + "found " + attributeExpressionExecutors[2].getReturnType());
-                } else {
-                    recordWindow = (int) ((ConstantExpressionExecutor) attributeExpressionExecutors[2]).getValue();
-                }
-            }
-
-            if (attributeExpressionLength == 4) {
-
-                if (!(attributeExpressionExecutors[3] instanceof ConstantExpressionExecutor)) {
-                    throw new SiddhiAppValidationException("ID has to be constant but " +
-                            "found " + this.attributeExpressionExecutors[3].getClass().getCanonicalName());
-                }
-
-                if (attributeExpressionExecutors[3].getReturnType() == Attribute.Type.STRING) {
-                    id = (String) ((ConstantExpressionExecutor) attributeExpressionExecutors[3]).getValue();
-                } else {
-                    throw new SiddhiAppValidationException("ID is  expected to be String but "
-                            + "found " + attributeExpressionExecutors[3].getReturnType());
-                }
+                        + "found" + attributeExpressionExecutors[1]
+                        .getReturnType());
             }
 
         } else {
             throw new SiddhiAppValidationException("Input parameters for Log can be iijTimeStamp (Long), " +
-                    "type (String),recordwindow (int) and id(String) but there are " +
-                    attributeExpressionExecutors.length + " in the input!");
+                    "type (String), but there are " +
+                    attributeExpressionExecutors
+                            .length + " in the input!");
         }
-        createFile();
+        //createFile();
 
         return new ArrayList<Attribute>();
     }
@@ -324,225 +198,273 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                 calculateThroughput(streamEventChunk);
                 break;
 
-            case "latency":
-                calculateLatency(streamEventChunk);
-                break;
-
-            case "both":
-                calculateThroughputAndLatency(streamEventChunk);
-                break;
-
             default:
                 log.error("executionType should be either throughput or latency or both "
-                        + "but found " + executionType);
+                        + "but found" + " " + executionType);
         }
 
         nextProcessor.process(streamEventChunk);
     }
 
-    /**
-     * This method is to calculate latency.
-     *
-     * @param streamEventChunk
-     */
 
-    private void calculateLatency(ComplexEventChunk<StreamEvent> streamEventChunk) {
-        synchronized (this) {
-            while (streamEventChunk.hasNext()) {
-                StreamEvent streamEvent = streamEventChunk.next();
+
+
+
+
+    public void filewritecreator(File file2) {
+        try {
+            if (!file2.exists()) {
                 try {
-                    long currentTime = System.currentTimeMillis();
-                    long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
-                    timeSpent += (currentTime - iijTimestamp);
-                    eventCount++;
-                    eventCountTotal++;
+                    file2.createNewFile();
 
-                    if (eventCount >= recordWindow) {
-                        totalTimeSpent += timeSpent;
-                        histogram2.recordValue((timeSpent));
-                        histogram.recordValue(timeSpent);
-                        if (!flag) {
-                            flag = true;
-                            fstream.write("id,Average "
-                                    + "latency "
-                                    + "per event in this window(ms), Entire Average latency per "
-                                    + "event for the run(ms), Total "
-                                    + "number"
-                                    + " of "
-                                    + "events received (non-atomic), timespent(in one window),"
-                                    + "totaltimespent),"
-                                    + "AVG latency from start (90),"
-                                    + "" + "AVG latency from start(95), "
-                                    + "AVG latency from start "
-                                    + "(99)," + "AVG latency in this "
-                                    + "window(90)," + "AVG latency in this window(95),"
-                                    + "AVG latency "
-                                    + "in this window(99)");
-                            fstream.write("\r\n");
-                            fstream.flush();
-                        }
-                        long time = timeSpent;
-                        long totalTime = totalTimeSpent;
-                        long event = eventCount;
-                        long totalEvent = eventCountTotal;
+                    fw = new FileWriter(file2.getAbsoluteFile(), true);
+                    bw = new BufferedWriter(fw);
 
-                        LatencyFileWriting file =
-                                new LatencyFileWriting(recordWindow, totalEvent, event,
-                                        time, totalTime, histogram,
-                                        histogram2, fstream);
+                    bw.write("Timestamp, " + "Execution Group, " + ", ParallelInstance" +
+                            "Number of Windows Executed" +
+                            "Throughput in this window (thousands events/second), " +
+                            "Entire throughput for the run (thousands events/second), " +
+                            "Total elapsed time(s)," +
+                            "Total Events," +
+                            "Average latency per event in this window(ms)," +
+                            "Entire Average latency per event for the run(ms), " +
+                            "AVG latency from start (90), " +
+                            "AVG latency from start(95), " +
+                            "AVG latency from start (99), " +
+                            "AVG latency in this window(90), " +
+                            "AVG latency in this window(95), " +
+                            "AVG latency in this window(99), " +
+                            "Total memory with the Oracle JVM, " +
+                            "Free memory with the Oracle JVM " +
+                            "InputStream");
+                    bw.write("\n");
+                    bw.flush();
 
-                        executorService.submit(file);
-                        histogram2.reset();
-                        eventCount = 0;
-                        timeSpent = 0;
-                        if (!exitFlag && eventCountTotal == 100000000000L) {
-                            log.info("Exit flag set");
-                            setCompletedFlag(sequenceNumber);
-                            exitFlag = true;
-                        }
-                    }
 
-                } catch (Exception ex) {
-                    log.error("Error while consuming event" + ex.getMessage(), ex);
-                }
+                } catch (IOException e) { }
+            }  else {
+                fw = new FileWriter(file2.getAbsoluteFile(), true);
+                bw = new BufferedWriter(fw);
             }
+        } catch (IOException e) {
         }
+
     }
 
+
+
+
+    int k = 1;
     /**
      * This method is to calculate throughput.
      *
      * @param streamEventChunk
      */
 
-    private void calculateThroughput(ComplexEventChunk<StreamEvent> streamEventChunk) {
+    private String calculateThroughput(ComplexEventChunk<StreamEvent> streamEventChunk) {
+        System.out.println("Inside throughput %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+
+        Connection conn = null;     //Initiating the connection Variable
+
+
+
         synchronized (this) {
+
             if (firstTupleTime == -1) {
                 firstTupleTime = System.currentTimeMillis();
             }
-            while (streamEventChunk.hasNext()) {
-                streamEventChunk.next();
-                try {
-                    eventCount++;
-                    eventCountTotal++;
+            try {
 
-                    if (eventCount >= recordWindow) {
+                Class.forName("com.mysql.jdbc.Driver");
+                conn = DriverManager.getConnection(DB_URL, USER, PASS);
+                Statement st = conn.createStatement();
+                System.out.println("Conn--------");
+                System.out.println(conn);
+
+
+
+                while (streamEventChunk.hasNext()) {
+                    if (firstTupleTime == -1) {
+                        firstTupleTime = System.currentTimeMillis();
+                    }
+                    int temp = 0;
+                    try {
+                        log.info("The current app name is " + siddhiAppContextName);
+
+
+                        StreamEvent streamEvent = streamEventChunk.next();
+                        int execgroup = (Integer) (attributeExpressionExecutors[2].execute(streamEvent));
+                        int parallel = (Integer) (attributeExpressionExecutors[3].execute(streamEvent));
+                        String outputLog = (String) (attributeExpressionExecutors[4].execute(streamEvent));
+                        int recordWindow = (Integer) (attributeExpressionExecutors[5].execute(streamEvent));
+
+                        //Getting the currentInstance and Execution Group like below is only valid when the numbers are of 1 digit.
+                        int len = siddhiAppContextName.length();
+                        String currentInstance = siddhiAppContextName.
+                                substring((len - 1) , len);
+
+
+                        String currentExecutionGroup  = siddhiAppContextName.
+                                substring((len - 3) , len - 2);
+
+                        File file = new File("/home/winma/Documents/Performance-Files/"
+                                + execgroup + "_" + currentInstance + ".csv");
+                        filewritecreator(file);
+
+
+
+
+                        //Initiating the next window with new start time
+                        if (startTime == -1) {
+                            startTime = System.currentTimeMillis();
+                            log.info("Start time updated ");
+                        }
+
+
+                        eventCountTotal++;
+                        eventCount++;
+
+
+
                         long currentTime = System.currentTimeMillis();
-                        long value = currentTime - startTime;
 
-                        if (!flag) {
-                            flag = true;
-                            fstream.write("Id, Throughput in this window (events/second), Entire "
-                                    + "throughput for the run (events/second), Total "
-                                    + "elapsed time(s),Total Events,CurrentTime");
-                            fstream.write("\r\n");
-                            fstream.flush();
+                        long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
+                        timeSpent += (currentTime - iijTimestamp);
+
+
+
+                        if (eventCount >= recordWindow) {
+                            log.info("Inside throughput extension of " + outputLog);
+
+
+                            totalTimeSpent += timeSpent;
+                            log.info("Total time added");
+                            histogram2.recordValue((timeSpent));
+                            histogram.recordValue(totalTimeSpent);
+                            long value = currentTime - startTime;
+                            long totalPhysicalMemorySize = ((com.sun.management.OperatingSystemMXBean)
+                                    ManagementFactory
+                                            .getOperatingSystemMXBean()).getTotalPhysicalMemorySize();
+                            long freememorySize = ((com.sun.management.OperatingSystemMXBean) ManagementFactory
+                                    .getOperatingSystemMXBean()).getTotalPhysicalMemorySize();
+                            double cpuUsage = ((com.sun.management.OperatingSystemMXBean) ManagementFactory
+                                    .getOperatingSystemMXBean()).getProcessCpuLoad();
+
+
+                            String s = Long.toString(currentTime);
+                            //s = s.substring(0, 10);
+                            long currentTime2 = Long.valueOf(s);
+                            System.out.println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@2");
+                            log.info("Inserting in to database");
+                            System.out.println("current Time 2");
+                            System.out.println(currentTime2);
+                            System.out.println("------------------");
+                            System.out.println("freememory-size");
+                            System.out.println(freememorySize);
+                            String sql = "INSERT INTO metricstable (iijtimestamp,exec,parallel," +
+                                    "m1,m2,m3,m4,m5,m6,m7," +
+                                    "m8,m9,m10," +
+                                    "m11,m12,m13,m14,m15,m16" +
+                                    ")" + "VALUES (" +
+                                    currentTime2 + "," +
+                                    execgroup + "," +
+                                    "'"+currentInstance+"'" + "," +
+                                    (eventCountTotal / recordWindow) + "," +
+                                    ((eventCount * 1000f) / value) + "," +
+                                    (eventCountTotal * 1000f / (currentTime - firstTupleTime)) + "," +
+                                    ((currentTime - firstTupleTime) / 1000f) + "," +
+                                    eventCountTotal + "," +
+                                    ((timeSpent * 1.0) / eventCount) + "," +
+                                    ((totalTimeSpent * 1.0) / eventCountTotal) + "," +
+                                    histogram.getValueAtPercentile(90.0) + "," +
+                                    histogram.getValueAtPercentile(95.0) + "," +
+                                    histogram.getValueAtPercentile(99.0) + "," +
+                                    histogram2.getValueAtPercentile(90.0) + "," +
+                                    histogram2.getValueAtPercentile(95.0) + "," +
+                                    histogram2.getValueAtPercentile(99.0) + "," +
+                                    totalPhysicalMemorySize + "," +
+                                    freememorySize +"," +
+                                    cpuUsage +
+                                    ")";
+                            System.out.println(sql);
+
+
+                            st.executeUpdate(sql);
+
+
+                            log.info("Done inserting values to SQL DB ****************");
+                            System.out.println("Done inserting values to SQL DB");
+
+
+
+                            log.info("Writing files");
+
+                            bw.write(currentTime2 + "," +
+                                    execgroup + "," +
+                                    currentInstance + "," +
+                                    (eventCountTotal / recordWindow) + "," +
+                                    ((eventCount * 1000) / value) + "," +
+                                    (eventCountTotal * 1000 / (currentTime - firstTupleTime)) + "," +
+                                    ((currentTime - firstTupleTime) / 1000f) + "," +
+                                    eventCountTotal + "," +
+                                    ((timeSpent * 1.0) / eventCount) + "," +
+                                    ((totalTimeSpent * 1.0) / eventCountTotal) + "," +
+                                    histogram.getValueAtPercentile(90.0) + "," +
+                                    histogram.getValueAtPercentile(95.0) + "," +
+                                    histogram.getValueAtPercentile(99.0) + "," +
+                                    histogram2.getValueAtPercentile(90.0) + "," +
+                                    histogram2.getValueAtPercentile(95.0) + "," +
+                                    histogram2.getValueAtPercentile(99.0) + "," +
+                                    totalPhysicalMemorySize + "," +
+                                    freememorySize + "," +
+                                    outputLog);
+                            bw.write("\n");
+                            bw.flush();
+                            log.info("File wrtiting completed in throughput" + execgroup +
+                                    "_" + currentInstance + ".csv");
+
+                            // executorService.submit(file);
+                            startTime = -1;
+                            eventCount = 0;
+                            histogram2.reset();
+                            timeSpent = 0;
+
+                            log.info("Exiting the throughput extension ");
+
+                            return ("");
                         }
+                    } catch (Exception ex) {
+                        log.error("Error while consuming event. " + ex.getStackTrace(), ex.getCause());
+                        System.out.println(ex.getMessage());
+                        System.out.println(ex.getCause());
+                        System.out.println(ex);
+                        ex.printStackTrace();
+                        System.out.println("mysql error");
 
-                        long event = eventCount;
-                        long totalEvent = eventCountTotal;
-                        ThroughputFileWriting
-                                file = new ThroughputFileWriting(firstTupleTime, recordWindow, totalEvent,
-                                event, currentTime, value, fstream
-                        );
-
-                        executorService.submit(file);
-                        startTime = -1;
-                        eventCount = 0;
-
-                        if (!exitFlag && eventCountTotal == 100000000000L) {
-                            log.info("Exit flag set");
-                            setCompletedFlag(sequenceNumber);
-                            exitFlag = true;
-                        }
                     }
-                } catch (Exception ex) {
-                    log.error("Error while consuming event" + ex.getMessage(), ex);
                 }
+
+
+                conn.close();
+
+
+            } catch (ClassNotFoundException e) {
+            } catch (SQLException e) {
+                log.error(e.getMessage());
             }
+
+
+
         }
+
+        return ("");
     }
 
-    /**
-     * This method is to calculate throughput and latency at once.
-     *
-     * @param streamEventChunk
-     */
 
-    private void calculateThroughputAndLatency(ComplexEventChunk<StreamEvent> streamEventChunk) {
-        synchronized (this) {
 
-            if (firstTupleTime == -1) {
-                firstTupleTime = System.currentTimeMillis();
-            }
-            while (streamEventChunk.hasNext()) {
-                StreamEvent streamEvent = streamEventChunk.next();
-                try {
-                    if (startTime == -1) {
-                        startTime = System.currentTimeMillis();
-                    }
 
-                    long currentTime = System.currentTimeMillis();
-                    long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
-                    timeSpent += (currentTime - iijTimestamp);
-                    eventCount++;
-                    eventCountTotal++;
 
-                    if (eventCount == recordWindow) {
-                        currentTime = System.currentTimeMillis();
-                        long value = currentTime - startTime;
-                        totalTimeSpent += timeSpent;
-                        histogram2.recordValue(timeSpent);
-                        histogram.recordValue(timeSpent);
 
-                        if (!flag) {
-                            flag = true;
-                            fstream.write("Id, Throughput in this window (events/second), Entire "
-                                    + "throughput for the run (events/second), Total "
-                                    + "elapsed time(s),Total Events,CurrentTime,Average "
-                                    + "latency "
-                                    + "per event in this window(ms), Entire Average latency per "
-                                    + "event for the run(ms), "
-                                    + "AVG latency from start (90),"
-                                    + "" + "AVG latency from start(95), "
-                                    + "AVG latency from start "
-                                    + "(99)," + "AVG latency in this "
-                                    + "window(90)," + "AVG latency in this window(95),"
-                                    + "AVG latency "
-                                    + "in this window(99)");
-                            fstream.write("\r\n");
-                            fstream.flush();
-                        }
-
-                        long event = eventCount;
-                        long totalEvent = eventCountTotal;
-                        long time = timeSpent;
-                        long totalTime = totalTimeSpent;
-
-                        BothFileWriting
-                                file = new BothFileWriting(firstTupleTime, recordWindow, totalEvent,
-                                event, currentTime, value, fstream, time, totalTime,
-                                histogram, histogram2
-                        );
-
-                        executorService.submit(file);
-                        histogram2.reset();
-                        timeSpent = 0;
-                        startTime = -1;
-                        eventCount = 0;
-
-                        if (!exitFlag && eventCountTotal == 10000000000000L) {
-                            log.info("Exit flag set");
-                            setCompletedFlag(sequenceNumber);
-                            exitFlag = true;
-                        }
-                    }
-                } catch (Exception ex) {
-                    log.error("Error while consuming event" + ex.getMessage(), ex);
-                }
-            }
-        }
-    }
 
     @Override
     public void start() {
@@ -565,35 +487,5 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
         //Nothing to be done
     }
 
-    /**
-     * This method helps to create a file.
-     */
 
-    private void createFile() {
-
-        try {
-            File directory = new File(logDir);
-            if (!directory.exists()) {
-                //check whether that directory is created or not
-                if (!directory.mkdir()) {
-                    log.error("Error while creating the output directory.");
-                }
-            }
-            sequenceNumber = getLogFileSequenceNumber();
-            outputFileTimeStamp = System.currentTimeMillis();
-            fstream = new OutputStreamWriter(new FileOutputStream(new File(logDir + "/output-" +
-                    siddhiAppContextName + "-" +
-                    id + "-" +
-                    sequenceNumber + "-" +
-                    ".csv")
-                    .getAbsoluteFile()),
-                    StandardCharsets
-                            .UTF_8);
-        } catch (IOException e) {
-            log.error("Error while creating statistics output file, " + e.getMessage(), e);
-        } finally {
-
-        }
-    }
 }
-
