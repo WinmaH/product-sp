@@ -52,6 +52,8 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 
 
@@ -111,15 +113,25 @@ import java.util.concurrent.ExecutorService;
 
 public class CalculatePerformanceStreamProcessorExtension extends StreamProcessor {
     private static final Logger log = Logger.getLogger(CalculatePerformanceStreamProcessorExtension.class);
-    private static final int RECORDWINDOW = 2;
-    private static final Histogram histogram = new Histogram(2);
-    private static final Histogram histogram2 = new Histogram(2);
-    private static long firstTupleTime = -1;
-    private static long eventCountTotal = 0;
-    private static long eventCount = 0;
-    private static long timeSpent = 0;
-    private static long totalTimeSpent = 0;
-    private static long startTime = -1;
+    private  final int RECORDWINDOW = 2;
+    //private  static final Histogram histogram = new Histogram(2);
+    //private  static final Histogram histogram2 = new Histogram(2);
+    private static final ConcurrentHashMap<String, Histogram> histogramMap = new ConcurrentHashMap<String, Histogram>();
+    private static final ConcurrentHashMap<String, Histogram> histogramMap2 = new ConcurrentHashMap<String, Histogram>();
+
+    //private  static long firstTupleTime = -1;
+    private static  ConcurrentHashMap<String,Long> firstTupleTimeMap = new ConcurrentHashMap<String,Long>();
+    //private  long eventCountTotal = 0;
+    private static final ConcurrentHashMap<String, Long> eventCountMap = new ConcurrentHashMap<String, Long>();
+    private static final ConcurrentHashMap<String, Long> eventCountTotalMap = new ConcurrentHashMap<String, Long>();
+    //private  long eventCount = 0;
+    //private  long timeSpent = 0;
+    //private  long totalTimeSpent = 0;
+    private static final ConcurrentHashMap<String, Long> timeSpentMap = new ConcurrentHashMap<String, Long>();
+    private static final ConcurrentHashMap<String, Long> totalTimeSpentMap = new ConcurrentHashMap<String, Long>();
+
+    //private  static long startTime = -1;
+    private static ConcurrentHashMap<String, Long> startTimeMap = new ConcurrentHashMap<String, Long>();
     private String executionType;
     private ExecutorService executorService;
     BufferedWriter bw = null;
@@ -145,6 +157,40 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
         executorService = siddhiAppContext.getExecutorService();
 
         siddhiAppContextName = siddhiAppContext.getName();
+
+        if (!histogramMap.containsKey(siddhiAppContextName)) {
+            histogramMap.put(siddhiAppContextName, new Histogram(2));
+        }
+
+        if (!histogramMap2.containsKey(siddhiAppContextName)) {
+            histogramMap2.put(siddhiAppContextName, new Histogram(2));
+        }
+
+        if (!eventCountTotalMap.containsKey(siddhiAppContextName)) {
+            eventCountTotalMap.put(siddhiAppContextName, 0L);
+            System.out.println("Total Event Count Initialized For " + siddhiAppContextName);
+        }
+
+        if (!eventCountMap.containsKey(siddhiAppContextName)) {
+            eventCountMap.put(siddhiAppContextName, 0L);
+        }
+
+        if (!timeSpentMap.containsKey(siddhiAppContextName)) {
+            timeSpentMap.put(siddhiAppContextName, 0L);
+        }
+
+        if (!totalTimeSpentMap.containsKey(siddhiAppContextName)) {
+            totalTimeSpentMap.put(siddhiAppContextName, 0L);
+        }
+
+        if (!startTimeMap.containsKey(siddhiAppContextName)) {
+            startTimeMap.put(siddhiAppContextName, -1L);
+        }
+
+        if (!firstTupleTimeMap.containsKey(siddhiAppContextName)) {
+            firstTupleTimeMap.put(siddhiAppContextName, -1L);
+        }
+
         log.info("init-@@@@@@");
 
         if (attributeExpressionLength == 6) {
@@ -206,10 +252,10 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
         nextProcessor.process(streamEventChunk);
     }
 
+    @Override
+    public boolean unDeploy(String siddhiAppName) {
 
-
-
-
+    }
 
     public void filewritecreator(File file2) {
         try {
@@ -270,8 +316,8 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
         synchronized (this) {
 
-            if (firstTupleTime == -1) {
-                firstTupleTime = System.currentTimeMillis();
+            if (firstTupleTimeMap.get(siddhiAppContextName) == -1) {
+                firstTupleTimeMap.put(siddhiAppContextName,System.currentTimeMillis());
             }
             try {
 
@@ -284,8 +330,8 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
 
                 while (streamEventChunk.hasNext()) {
-                    if (firstTupleTime == -1) {
-                        firstTupleTime = System.currentTimeMillis();
+                    if (firstTupleTimeMap.get(siddhiAppContextName) == -1) {
+                        firstTupleTimeMap.put(siddhiAppContextName, System.currentTimeMillis());
                     }
                     int temp = 0;
                     try {
@@ -300,12 +346,23 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
                         //Getting the currentInstance and Execution Group like below is only valid when the numbers are of 1 digit.
                         int len = siddhiAppContextName.length();
-                        String currentInstance = siddhiAppContextName.
-                                substring((len - 1) , len);
+//                        String currentInstance = siddhiAppContextName.
+//                                substring((len - 1) , len);
+//
+//
+//
+//                        String currentExecutionGroup  = siddhiAppContextName.
+//                                substring((len - 3) , len - 2);
 
 
-                        String currentExecutionGroup  = siddhiAppContextName.
-                                substring((len - 3) , len - 2);
+                        String[] SplitArray = siddhiAppContextName.split("-");
+
+                        String currentExecutionGroup = SplitArray[SplitArray.length-2].substring(5);
+
+                        //executionGroup = Integer.valueOf(appHolder.getAppName().substring(appHolder.getAppName().length()-3,
+                        //appHolder.getAppName().length()-2));
+
+                        String currentInstance = SplitArray[SplitArray.length-1];
 
                         File file = new File("/home/winma/Documents/Performance-Files/"
                                 + execgroup + "_" + currentInstance + ".csv");
@@ -315,33 +372,39 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
 
                         //Initiating the next window with new start time
-                        if (startTime == -1) {
-                            startTime = System.currentTimeMillis();
+                        if (startTimeMap.get(siddhiAppContextName) == -1) {
+                            startTimeMap.put(siddhiAppContextName,System.currentTimeMillis());
                             log.info("Start time updated ");
                         }
 
 
-                        eventCountTotal++;
-                        eventCount++;
+                        eventCountTotalMap.put(siddhiAppContextName, eventCountTotalMap.get(siddhiAppContextName)+1);
+                        eventCountMap.put(siddhiAppContextName,eventCountMap.get(siddhiAppContextName)+1);
 
 
 
                         long currentTime = System.currentTimeMillis();
 
                         long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
-                        timeSpent += (currentTime - iijTimestamp);
+                        //timeSpent += (currentTime - iijTimestamp);
+                        timeSpentMap.put(siddhiAppContextName,timeSpentMap.get(siddhiAppContextName)+(currentTime - iijTimestamp));
 
 
 
-                        if (eventCount >= recordWindow) {
+                        if (eventCountMap.get(siddhiAppContextName) >= recordWindow) {
                             log.info("Inside throughput extension of " + outputLog);
 
 
-                            totalTimeSpent += timeSpent;
+                            //totalTimeSpent += timeSpent;
+                            totalTimeSpentMap.put(siddhiAppContextName, timeSpentMap.get(siddhiAppContextName)+1);
                             log.info("Total time added");
-                            histogram2.recordValue((timeSpent));
-                            histogram.recordValue(totalTimeSpent);
-                            long value = currentTime - startTime;
+                            //histogram2.recordValue((timeSpent));
+                            histogramMap2.get(siddhiAppContextName).recordValue((timeSpentMap.get(siddhiAppContextName)));
+
+                            //histogram.recordValue(totalTimeSpent);
+                            histogramMap.get(siddhiAppContextName).recordValue(timeSpentMap.get(siddhiAppContextName));
+                            long value = currentTime - startTimeMap.get(siddhiAppContextName);
+                            System.out.println("value "+currentTime+" "+startTimeMap.get(siddhiAppContextName));
                             long totalPhysicalMemorySize = ((com.sun.management.OperatingSystemMXBean)
                                     ManagementFactory
                                             .getOperatingSystemMXBean()).getTotalPhysicalMemorySize();
@@ -369,19 +432,19 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                                     currentTime2 + "," +
                                     execgroup + "," +
                                     "'"+currentInstance+"'" + "," +
-                                    (eventCountTotal / recordWindow) + "," +
-                                    ((eventCount * 1000f) / value) + "," +
-                                    (eventCountTotal * 1000f / (currentTime - firstTupleTime)) + "," +
-                                    ((currentTime - firstTupleTime) / 1000f) + "," +
-                                    eventCountTotal + "," +
-                                    ((timeSpent * 1.0) / eventCount) + "," +
-                                    ((totalTimeSpent * 1.0) / eventCountTotal) + "," +
-                                    histogram.getValueAtPercentile(90.0) + "," +
-                                    histogram.getValueAtPercentile(95.0) + "," +
-                                    histogram.getValueAtPercentile(99.0) + "," +
-                                    histogram2.getValueAtPercentile(90.0) + "," +
-                                    histogram2.getValueAtPercentile(95.0) + "," +
-                                    histogram2.getValueAtPercentile(99.0) + "," +
+                                    (eventCountTotalMap.get(siddhiAppContextName) / recordWindow) + "," +
+                                    ((eventCountMap.get(siddhiAppContextName) * 1000f) / value) + "," +
+                                    (eventCountTotalMap.get(siddhiAppContextName) * 1000f / (currentTime - firstTupleTimeMap.get(siddhiAppContextName))) + "," +
+                                    ((currentTime - firstTupleTimeMap.get(siddhiAppContextName)) / 1000f) + "," +
+                                    eventCountTotalMap.get(siddhiAppContextName) + "," +
+                                    ((timeSpentMap.get(siddhiAppContextName) * 1.0) / eventCountMap.get(siddhiAppContextName)) + "," +
+                                    ((totalTimeSpentMap.get(siddhiAppContextName) * 1.0) / eventCountTotalMap.get(siddhiAppContextName)) + "," +
+                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(90.0) + "," +
+                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(95.0) + "," +
+                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(99.0) + "," +
+                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(90.0) + "," +
+                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(95.0) + "," +
+                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(99.0) + "," +
                                     totalPhysicalMemorySize + "," +
                                     freememorySize +"," +
                                     cpuUsage +
@@ -402,19 +465,19 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                             bw.write(currentTime2 + "," +
                                     execgroup + "," +
                                     currentInstance + "," +
-                                    (eventCountTotal / recordWindow) + "," +
-                                    ((eventCount * 1000) / value) + "," +
-                                    (eventCountTotal * 1000 / (currentTime - firstTupleTime)) + "," +
-                                    ((currentTime - firstTupleTime) / 1000f) + "," +
-                                    eventCountTotal + "," +
-                                    ((timeSpent * 1.0) / eventCount) + "," +
-                                    ((totalTimeSpent * 1.0) / eventCountTotal) + "," +
-                                    histogram.getValueAtPercentile(90.0) + "," +
-                                    histogram.getValueAtPercentile(95.0) + "," +
-                                    histogram.getValueAtPercentile(99.0) + "," +
-                                    histogram2.getValueAtPercentile(90.0) + "," +
-                                    histogram2.getValueAtPercentile(95.0) + "," +
-                                    histogram2.getValueAtPercentile(99.0) + "," +
+                                    (eventCountTotalMap.get(siddhiAppContextName) / recordWindow) + "," +
+                                    ((eventCountMap.get(siddhiAppContextName) * 1000) / value) + "," +
+                                    (eventCountTotalMap.get(siddhiAppContextName) * 1000 / (currentTime - firstTupleTimeMap.get(siddhiAppContextName))) + "," +
+                                    ((currentTime - firstTupleTimeMap.get(siddhiAppContextName)) / 1000f) + "," +
+                                    eventCountTotalMap.get(siddhiAppContextName) + "," +
+                                    ((timeSpentMap.get(siddhiAppContextName) * 1.0) / eventCountMap.get(siddhiAppContextName)) + "," +
+                                    ((totalTimeSpentMap.get(siddhiAppContextName) * 1.0) / eventCountTotalMap.get(siddhiAppContextName)) + "," +
+                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(90.0) + "," +
+                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(95.0) + "," +
+                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(99.0) + "," +
+                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(90.0) + "," +
+                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(95.0) + "," +
+                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(99.0) + "," +
                                     totalPhysicalMemorySize + "," +
                                     freememorySize + "," +
                                     outputLog);
@@ -424,10 +487,10 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                                     "_" + currentInstance + ".csv");
 
                             // executorService.submit(file);
-                            startTime = -1;
-                            eventCount = 0;
-                            histogram2.reset();
-                            timeSpent = 0;
+                            startTimeMap.put(siddhiAppContextName, -1L);
+                            eventCountMap.put(siddhiAppContextName, 0L);
+                            histogramMap2.get(siddhiAppContextName).reset();
+                            timeSpentMap.put(siddhiAppContextName,0L);
 
                             log.info("Exiting the throughput extension ");
 
