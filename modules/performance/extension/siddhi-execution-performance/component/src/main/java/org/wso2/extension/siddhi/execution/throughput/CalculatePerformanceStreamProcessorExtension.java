@@ -113,25 +113,23 @@ import java.util.concurrent.ExecutorService;
 
 public class CalculatePerformanceStreamProcessorExtension extends StreamProcessor {
     private static final Logger log = Logger.getLogger(CalculatePerformanceStreamProcessorExtension.class);
-    private  final int RECORDWINDOW = 2;
+    //private  final int RECORDWINDOW = 2;
     //private  static final Histogram histogram = new Histogram(2);
     //private  static final Histogram histogram2 = new Histogram(2);
-    private static final ConcurrentHashMap<String, Histogram> histogramMap = new ConcurrentHashMap<String, Histogram>();
-    private static final ConcurrentHashMap<String, Histogram> histogramMap2 = new ConcurrentHashMap<String, Histogram>();
-
+    private static  ConcurrentHashMap<String, Histogram> histogramMap;
+    private static  ConcurrentHashMap<String, Histogram> histogramMap2;
     //private  static long firstTupleTime = -1;
-    private static  ConcurrentHashMap<String,Long> firstTupleTimeMap = new ConcurrentHashMap<String,Long>();
+    private static  ConcurrentHashMap<String,Long> firstTupleTimeMap;
     //private  long eventCountTotal = 0;
-    private static final ConcurrentHashMap<String, Long> eventCountMap = new ConcurrentHashMap<String, Long>();
-    private static final ConcurrentHashMap<String, Long> eventCountTotalMap = new ConcurrentHashMap<String, Long>();
+    private static  ConcurrentHashMap<String, Long> eventCountMap;
+    private static  ConcurrentHashMap<String, Long> eventCountTotalMap;
     //private  long eventCount = 0;
     //private  long timeSpent = 0;
     //private  long totalTimeSpent = 0;
-    private static final ConcurrentHashMap<String, Long> timeSpentMap = new ConcurrentHashMap<String, Long>();
-    private static final ConcurrentHashMap<String, Long> totalTimeSpentMap = new ConcurrentHashMap<String, Long>();
-
+    private static  ConcurrentHashMap<String, Long> timeSpentMap;
+    private static  ConcurrentHashMap<String, Long> totalTimeSpentMap;
     //private  static long startTime = -1;
-    private static ConcurrentHashMap<String, Long> startTimeMap = new ConcurrentHashMap<String, Long>();
+    private static ConcurrentHashMap<String, Long> startTimeMap;
     private String executionType;
     private ExecutorService executorService;
     BufferedWriter bw = null;
@@ -157,6 +155,38 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
         executorService = siddhiAppContext.getExecutorService();
 
         siddhiAppContextName = siddhiAppContext.getName();
+
+        if(histogramMap == null){
+            histogramMap = new ConcurrentHashMap<String, Histogram>();
+        }
+
+        if(histogramMap2==null){
+             histogramMap2 = new ConcurrentHashMap<String, Histogram>();
+        }
+
+        if(eventCountTotalMap == null){
+             eventCountTotalMap = new ConcurrentHashMap<String, Long>();
+        }
+
+        if(eventCountMap==null){
+            eventCountMap = new ConcurrentHashMap<String, Long>();
+        }
+
+        if(timeSpentMap == null){
+            timeSpentMap= new ConcurrentHashMap<String, Long>();
+        }
+
+        if(totalTimeSpentMap == null){
+            totalTimeSpentMap= new ConcurrentHashMap<String, Long>();
+        }
+
+        if(firstTupleTimeMap == null){
+            firstTupleTimeMap = new ConcurrentHashMap<String,Long>();
+        }
+
+        if(startTimeMap == null){
+            startTimeMap  = new ConcurrentHashMap<String, Long>();
+        }
 
         if (!histogramMap.containsKey(siddhiAppContextName)) {
             histogramMap.put(siddhiAppContextName, new Histogram(2));
@@ -250,11 +280,6 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
         }
 
         nextProcessor.process(streamEventChunk);
-    }
-
-    @Override
-    public boolean unDeploy(String siddhiAppName) {
-
     }
 
     public void filewritecreator(File file2) {
@@ -536,6 +561,16 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
     @Override
     public void stop() {
+        histogramMap = null;
+        histogramMap2 = null;
+        eventCountMap = null;
+        eventCountTotalMap = null;
+        timeSpentMap = null;
+        totalTimeSpentMap = null;
+        firstTupleTimeMap = null;
+        startTimeMap = null;
+
+
         //Do nothing
     }
 
