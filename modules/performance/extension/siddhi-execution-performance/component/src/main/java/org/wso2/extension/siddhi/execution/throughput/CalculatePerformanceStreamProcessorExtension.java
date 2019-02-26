@@ -434,7 +434,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                                     ManagementFactory
                                             .getOperatingSystemMXBean()).getTotalPhysicalMemorySize();
                             long freememorySize = ((com.sun.management.OperatingSystemMXBean) ManagementFactory
-                                    .getOperatingSystemMXBean()).getTotalPhysicalMemorySize();
+                                    .getOperatingSystemMXBean()).getFreePhysicalMemorySize();
                             double cpuUsage = ((com.sun.management.OperatingSystemMXBean) ManagementFactory
                                     .getOperatingSystemMXBean()).getProcessCpuLoad();
 
