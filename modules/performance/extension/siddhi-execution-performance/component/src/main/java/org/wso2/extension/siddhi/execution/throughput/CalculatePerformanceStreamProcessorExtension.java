@@ -273,7 +273,6 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             case "throughput":
                 calculateThroughput(streamEventChunk);
                 break;
-
             default:
                 log.error("executionType should be either throughput or latency or both "
                         + "but found" + " " + executionType);
@@ -335,13 +334,12 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
     private String calculateThroughput(ComplexEventChunk<StreamEvent> streamEventChunk) {
         System.out.println("Inside throughput %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
 
-        Connection conn = null;     //Initiating the connection Variable
-
-
+       //Connection conn = null;     //Initiating the connection Variable
 
         synchronized (this) {
+            Connection conn = null;
 
-            if (firstTupleTimeMap.get(siddhiAppContextName) == -1) {
+            if (firstTupleTimeMap != null && firstTupleTimeMap.get(siddhiAppContextName) == -1) {
                 firstTupleTimeMap.put(siddhiAppContextName,System.currentTimeMillis());
             }
             try {
@@ -355,6 +353,9 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
 
                 while (streamEventChunk.hasNext()) {
+                    if(firstTupleTimeMap != null && startTimeMap!= null && timeSpentMap != null && totalTimeSpentMap != null && eventCountMap != null && eventCountTotalMap != null
+                            && histogramMap2 != null && histogramMap!= null) {
+
                     if (firstTupleTimeMap.get(siddhiAppContextName) == -1) {
                         firstTupleTimeMap.put(siddhiAppContextName, System.currentTimeMillis());
                     }
@@ -394,8 +395,6 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                         filewritecreator(file);
 
 
-
-
                         //Initiating the next window with new start time
                         if (startTimeMap.get(siddhiAppContextName) == -1) {
                             startTimeMap.put(siddhiAppContextName,System.currentTimeMillis());
@@ -407,13 +406,11 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                         eventCountMap.put(siddhiAppContextName,eventCountMap.get(siddhiAppContextName)+1);
 
 
-
                         long currentTime = System.currentTimeMillis();
 
                         long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
                         //timeSpent += (currentTime - iijTimestamp);
                         timeSpentMap.put(siddhiAppContextName,timeSpentMap.get(siddhiAppContextName)+(currentTime - iijTimestamp));
-
 
 
                         if (eventCountMap.get(siddhiAppContextName) >= recordWindow) {
@@ -484,7 +481,6 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                             System.out.println("Done inserting values to SQL DB");
 
 
-
                             log.info("Writing files");
 
                             bw.write(currentTime2 + "," +
@@ -515,7 +511,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                             startTimeMap.put(siddhiAppContextName, -1L);
                             eventCountMap.put(siddhiAppContextName, 0L);
                             histogramMap2.get(siddhiAppContextName).reset();
-                            timeSpentMap.put(siddhiAppContextName,0L);
+                            timeSpentMap.put(siddhiAppContextName, 0L);
 
                             log.info("Exiting the throughput extension ");
 
@@ -531,17 +527,18 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
                     }
                 }
+                }
 
 
-                conn.close();
+               // conn.close();
 
 
             } catch (ClassNotFoundException e) {
             } catch (SQLException e) {
                 log.error(e.getMessage());
             }
-
-
+        try {
+            conn.close();} catch (SQLException e){log.error(e.getMessage());}
 
         }
 
