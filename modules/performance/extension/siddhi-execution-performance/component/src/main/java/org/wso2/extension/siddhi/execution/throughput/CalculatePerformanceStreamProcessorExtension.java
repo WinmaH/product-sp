@@ -113,23 +113,34 @@ import java.util.concurrent.ExecutorService;
 
 public class CalculatePerformanceStreamProcessorExtension extends StreamProcessor {
     private static final Logger log = Logger.getLogger(CalculatePerformanceStreamProcessorExtension.class);
-    //private  final int RECORDWINDOW = 2;
-    //private  static final Histogram histogram = new Histogram(2);
-    //private  static final Histogram histogram2 = new Histogram(2);
+
     private static  ConcurrentHashMap<String, Histogram> histogramMap;
     private static  ConcurrentHashMap<String, Histogram> histogramMap2;
-    //private  static long firstTupleTime = -1;
+
     private static  ConcurrentHashMap<String,Long> firstTupleTimeMap;
-    //private  long eventCountTotal = 0;
+
     private static  ConcurrentHashMap<String, Long> eventCountMap;
     private static  ConcurrentHashMap<String, Long> eventCountTotalMap;
-    //private  long eventCount = 0;
-    //private  long timeSpent = 0;
-    //private  long totalTimeSpent = 0;
+
     private static  ConcurrentHashMap<String, Long> timeSpentMap;
     private static  ConcurrentHashMap<String, Long> totalTimeSpentMap;
-    //private  static long startTime = -1;
+
     private static ConcurrentHashMap<String, Long> startTimeMap;
+
+     // throughput related parameters
+
+    private static  ConcurrentHashMap<String,Long> firstTupleTimeMapDataRate;
+
+    private static  ConcurrentHashMap<String, Long> eventCountMapDataRate;
+    private static  ConcurrentHashMap<String, Long> eventCountTotalMapDataRate;
+
+    private static  ConcurrentHashMap<String, Long> timeSpentMapDataRate;
+    private static  ConcurrentHashMap<String, Long> totalTimeSpentMapDataRate;
+
+    private static ConcurrentHashMap<String, Long> startTimeMapDataRate;
+
+
+
     private String executionType;
     private ExecutorService executorService;
     BufferedWriter bw = null;
@@ -188,6 +199,32 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             startTimeMap  = new ConcurrentHashMap<String, Long>();
         }
 
+// data rate related
+        if(eventCountTotalMapDataRate == null){
+            eventCountTotalMapDataRate = new ConcurrentHashMap<String, Long>();
+        }
+
+        if(eventCountMapDataRate==null){
+            eventCountMapDataRate = new ConcurrentHashMap<String, Long>();
+        }
+
+        if(timeSpentMapDataRate == null){
+            timeSpentMapDataRate = new ConcurrentHashMap<String, Long>();
+        }
+
+        if(totalTimeSpentMapDataRate == null){
+            totalTimeSpentMapDataRate = new ConcurrentHashMap<String, Long>();
+        }
+
+        if(firstTupleTimeMapDataRate == null){
+            firstTupleTimeMapDataRate = new ConcurrentHashMap<String,Long>();
+        }
+
+        if(startTimeMapDataRate == null){
+            startTimeMapDataRate  = new ConcurrentHashMap<String, Long>();
+        }
+
+        // data rate related
         if (!histogramMap.containsKey(siddhiAppContextName)) {
             histogramMap.put(siddhiAppContextName, new Histogram(2));
         }
@@ -219,6 +256,33 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
         if (!firstTupleTimeMap.containsKey(siddhiAppContextName)) {
             firstTupleTimeMap.put(siddhiAppContextName, -1L);
+        }
+
+        // data rate related
+
+        if (!eventCountTotalMapDataRate.containsKey(siddhiAppContextName)) {
+            eventCountTotalMapDataRate.put(siddhiAppContextName, 0L);
+            System.out.println("Total Event Count Initialized For " + siddhiAppContextName);
+        }
+
+        if (!eventCountMapDataRate.containsKey(siddhiAppContextName)) {
+            eventCountMapDataRate.put(siddhiAppContextName, 0L);
+        }
+
+        if (!timeSpentMapDataRate.containsKey(siddhiAppContextName)) {
+            timeSpentMapDataRate.put(siddhiAppContextName, 0L);
+        }
+
+        if (!totalTimeSpentMapDataRate.containsKey(siddhiAppContextName)) {
+            totalTimeSpentMapDataRate.put(siddhiAppContextName, 0L);
+        }
+
+        if (!startTimeMapDataRate.containsKey(siddhiAppContextName)) {
+            startTimeMapDataRate.put(siddhiAppContextName, -1L);
+        }
+
+        if (!firstTupleTimeMapDataRate.containsKey(siddhiAppContextName)) {
+            firstTupleTimeMapDataRate.put(siddhiAppContextName, -1L);
         }
 
         log.info("init-@@@@@@");
@@ -273,6 +337,8 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             case "throughput":
                 calculateThroughput(streamEventChunk);
                 break;
+            case "datarate" :
+                calculateDataRate(streamEventChunk);
             default:
                 log.error("executionType should be either throughput or latency or both "
                         + "but found" + " " + executionType);
@@ -546,7 +612,149 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
     }
 
 
+    private String calculateDataRate (ComplexEventChunk<StreamEvent> streamEventChunk) {
+        System.out.println("Inside DataRate %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
+        System.out.println("siddhi app "+siddhiAppContextName);
+        System.out.println("tuple "+ firstTupleTimeMapDataRate.get(siddhiAppContextName));
 
+        //Connection conn = null;     //Initiating the connection Variable
+
+        synchronized (this) {
+            Connection conn = null;
+
+
+            if (firstTupleTimeMapDataRate != null && firstTupleTimeMapDataRate.get(siddhiAppContextName) == -1) {
+                firstTupleTimeMapDataRate.put(siddhiAppContextName,System.currentTimeMillis());
+            }
+            try {
+
+                Class.forName("com.mysql.jdbc.Driver");
+                conn = DriverManager.getConnection(DB_URL, USER, PASS);
+                Statement st = conn.createStatement();
+                System.out.println("Conn--------");
+                System.out.println(conn);
+
+
+
+                while (streamEventChunk.hasNext()) {
+                    if(firstTupleTimeMapDataRate != null && startTimeMapDataRate!= null && timeSpentMapDataRate != null && totalTimeSpentMapDataRate != null &&
+                            eventCountMapDataRate != null && eventCountTotalMapDataRate != null) {
+
+                        if (firstTupleTimeMapDataRate.get(siddhiAppContextName) == -1) {
+                            firstTupleTimeMapDataRate.put(siddhiAppContextName, System.currentTimeMillis());
+                        }
+                        int temp = 0;
+                        try {
+                            log.info("The current app name is " + siddhiAppContextName);
+
+
+                            StreamEvent streamEvent = streamEventChunk.next();
+                            int execgroup = (Integer) (attributeExpressionExecutors[2].execute(streamEvent));
+                            int parallel = (Integer) (attributeExpressionExecutors[3].execute(streamEvent));
+                            String outputLog = (String) (attributeExpressionExecutors[4].execute(streamEvent));
+                            int recordWindow = (Integer) (attributeExpressionExecutors[5].execute(streamEvent));
+
+                            //Getting the currentInstance and Execution Group like below is only valid when the numbers are of 1 digit.
+                            int len = siddhiAppContextName.length();
+//
+                            String[] SplitArray = siddhiAppContextName.split("-");
+
+                            String currentExecutionGroup = SplitArray[SplitArray.length-2].substring(5);
+
+                            String currentInstance = SplitArray[SplitArray.length-1];
+
+                            if (startTimeMapDataRate.get(siddhiAppContextName) == -1) {
+                                startTimeMapDataRate.put(siddhiAppContextName,System.currentTimeMillis());
+                                log.info("Start time updated ");
+                            }
+
+
+                            eventCountTotalMapDataRate.put(siddhiAppContextName, eventCountTotalMap.get(siddhiAppContextName)+1);
+                            eventCountMapDataRate.put(siddhiAppContextName,eventCountMap.get(siddhiAppContextName)+1);
+
+
+                            long currentTime = System.currentTimeMillis();
+
+                            long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
+                            //timeSpent += (currentTime - iijTimestamp);
+                            timeSpentMapDataRate.put(siddhiAppContextName,timeSpentMapDataRate.get(siddhiAppContextName)+(currentTime - iijTimestamp));
+
+
+                            if (eventCountMapDataRate.get(siddhiAppContextName) >= recordWindow) {
+                                log.info("Inside throughput extension of " + outputLog);
+
+
+                                //totalTimeSpent += timeSpent;
+                                totalTimeSpentMapDataRate.put(siddhiAppContextName, timeSpentMapDataRate.get(siddhiAppContextName)+1);
+                                log.info("Total time added");
+
+                                long value = currentTime - startTimeMapDataRate.get(siddhiAppContextName);
+                                System.out.println("value "+currentTime+" "+startTimeMapDataRate.get(siddhiAppContextName));
+
+
+                                String s = Long.toString(currentTime);
+                                //s = s.substring(0, 10);
+                                long currentTime2 = Long.valueOf(s);
+                                System.out.println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@2");
+                                log.info("Inserting in to database");
+                                System.out.println("current Time 2");
+                                System.out.println(currentTime2);
+                                System.out.println("------------------");
+
+                                String sql = "INSERT INTO dataratetable (iijtimestamp,exec,parallel," +
+                                        "m1,m2,m3" +
+                                        ")" + "VALUES (" +
+                                        currentTime2 + "," +
+                                        execgroup + "," +
+                                        "'"+currentInstance+"'" + "," +
+                                        (eventCountTotalMapDataRate.get(siddhiAppContextName) / recordWindow) + "," +
+                                        ((eventCountMapDataRate.get(siddhiAppContextName) * 1000f) / value) + "," +
+                                        (eventCountTotalMapDataRate.get(siddhiAppContextName) * 1000f / (currentTime - firstTupleTimeMapDataRate.get(siddhiAppContextName))) + ")";
+                                System.out.println(sql);
+
+
+                                st.executeUpdate(sql);
+
+
+                                log.info("Done inserting values to SQL DB ****************");
+
+
+                                // executorService.submit(file);
+                                startTimeMapDataRate.put(siddhiAppContextName, -1L);
+                                eventCountMapDataRate.put(siddhiAppContextName, 0L);
+                                timeSpentMapDataRate.put(siddhiAppContextName, 0L);
+
+                                log.info("Exiting the throughput extension ");
+
+                                return ("");
+                            }
+                        } catch (Exception ex) {
+                            log.error("Error while consuming event. " + ex.getStackTrace(), ex.getCause());
+                            System.out.println(ex.getMessage());
+                            System.out.println(ex.getCause());
+                            System.out.println(ex);
+                            ex.printStackTrace();
+                            System.out.println("mysql error");
+
+                        }
+                    }
+                }
+
+
+                // conn.close();
+
+
+            } catch (ClassNotFoundException e) {
+            } catch (SQLException e) {
+                log.error(e.getMessage());
+            }
+            try {
+                conn.close();} catch (SQLException e){log.error(e.getMessage());}
+
+        }
+
+        return ("");
+    }
 
 
 
