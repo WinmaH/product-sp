@@ -149,6 +149,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
     static final String USER = "root";
     static final String PASS = "87654321";
     String siddhiAppContextName = "";
+    Connection conn;
 
 
     /**
@@ -285,6 +286,16 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             firstTupleTimeMapDataRate.put(siddhiAppContextName, -1L);
         }
 
+        try {
+
+            if (conn == null) {
+                Class.forName("com.mysql.jdbc.Driver");
+                conn = DriverManager.getConnection(DB_URL, USER, PASS);
+            }
+        } catch(Exception e) {
+            //handle
+        }
+
         log.info("init-@@@@@@");
 
         if (attributeExpressionLength == 6) {
@@ -335,10 +346,10 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
         switch (executionType.toLowerCase()) {
 
             case "throughput":
-                calculateThroughput(streamEventChunk);
+                calculateThroughput(streamEventChunk, conn);
                 break;
             case "datarate" :
-                calculateDataRate(streamEventChunk);
+                calculateDataRate(streamEventChunk, conn);
             default:
                 log.error("executionType should be either throughput or latency or both "
                         + "but found" + " " + executionType);
@@ -346,47 +357,6 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
         nextProcessor.process(streamEventChunk);
     }
-
-    public void filewritecreator(File file2) {
-        try {
-            if (!file2.exists()) {
-                try {
-                    file2.createNewFile();
-
-                    fw = new FileWriter(file2.getAbsoluteFile(), true);
-                    bw = new BufferedWriter(fw);
-
-                    bw.write("Timestamp, " + "Execution Group, " + ", ParallelInstance" +
-                            "Number of Windows Executed" +
-                            "Throughput in this window (thousands events/second), " +
-                            "Entire throughput for the run (thousands events/second), " +
-                            "Total elapsed time(s)," +
-                            "Total Events," +
-                            "Average latency per event in this window(ms)," +
-                            "Entire Average latency per event for the run(ms), " +
-                            "AVG latency from start (90), " +
-                            "AVG latency from start(95), " +
-                            "AVG latency from start (99), " +
-                            "AVG latency in this window(90), " +
-                            "AVG latency in this window(95), " +
-                            "AVG latency in this window(99), " +
-                            "Total memory with the Oracle JVM, " +
-                            "Free memory with the Oracle JVM " +
-                            "InputStream");
-                    bw.write("\n");
-                    bw.flush();
-
-
-                } catch (IOException e) { }
-            }  else {
-                fw = new FileWriter(file2.getAbsoluteFile(), true);
-                bw = new BufferedWriter(fw);
-            }
-        } catch (IOException e) {
-        }
-
-    }
-
 
 
 
@@ -397,21 +367,21 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
      * @param streamEventChunk
      */
 
-    private String calculateThroughput(ComplexEventChunk<StreamEvent> streamEventChunk) {
+    private String calculateThroughput(ComplexEventChunk<StreamEvent> streamEventChunk, Connection conn) {
         System.out.println("Inside throughput %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
 
-       //Connection conn = null;     //Initiating the connection Variable
+
 
         synchronized (this) {
-            Connection conn = null;
+//            Connection conn = null;
 
             if (firstTupleTimeMap != null && firstTupleTimeMap.get(siddhiAppContextName) == -1) {
                 firstTupleTimeMap.put(siddhiAppContextName,System.currentTimeMillis());
             }
             try {
 
-                Class.forName("com.mysql.jdbc.Driver");
-                conn = DriverManager.getConnection(DB_URL, USER, PASS);
+//                Class.forName("com.mysql.jdbc.Driver");
+//                conn = DriverManager.getConnection(DB_URL, USER, PASS);
                 Statement st = conn.createStatement();
                 System.out.println("Conn--------");
                 System.out.println(conn);
@@ -455,10 +425,6 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                         //appHolder.getAppName().length()-2));
 
                         String currentInstance = SplitArray[SplitArray.length-1];
-
-                        File file = new File("/home/winma/Documents/Performance-Files/"
-                                + execgroup + "_" + currentInstance + ".csv");
-                        filewritecreator(file);
 
 
                         //Initiating the next window with new start time
@@ -546,33 +512,6 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                             log.info("Done inserting values to SQL DB ****************");
                             System.out.println("Done inserting values to SQL DB");
 
-
-                            log.info("Writing files");
-
-                            bw.write(currentTime2 + "," +
-                                    execgroup + "," +
-                                    currentInstance + "," +
-                                    (eventCountTotalMap.get(siddhiAppContextName) / recordWindow) + "," +
-                                    ((eventCountMap.get(siddhiAppContextName) * 1000) / value) + "," +
-                                    (eventCountTotalMap.get(siddhiAppContextName) * 1000 / (currentTime - firstTupleTimeMap.get(siddhiAppContextName))) + "," +
-                                    ((currentTime - firstTupleTimeMap.get(siddhiAppContextName)) / 1000f) + "," +
-                                    eventCountTotalMap.get(siddhiAppContextName) + "," +
-                                    ((timeSpentMap.get(siddhiAppContextName) * 1.0) / eventCountMap.get(siddhiAppContextName)) + "," +
-                                    ((totalTimeSpentMap.get(siddhiAppContextName) * 1.0) / eventCountTotalMap.get(siddhiAppContextName)) + "," +
-                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(90.0) + "," +
-                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(95.0) + "," +
-                                    histogramMap.get(siddhiAppContextName).getValueAtPercentile(99.0) + "," +
-                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(90.0) + "," +
-                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(95.0) + "," +
-                                    histogramMap2.get(siddhiAppContextName).getValueAtPercentile(99.0) + "," +
-                                    totalPhysicalMemorySize + "," +
-                                    freememorySize + "," +
-                                    outputLog);
-                            bw.write("\n");
-                            bw.flush();
-                            log.info("File wrtiting completed in throughput" + execgroup +
-                                    "_" + currentInstance + ".csv");
-
                             // executorService.submit(file);
                             startTimeMap.put(siddhiAppContextName, -1L);
                             eventCountMap.put(siddhiAppContextName, 0L);
@@ -596,15 +535,15 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                 }
 
 
-               // conn.close();
 
 
-            } catch (ClassNotFoundException e) {
-            } catch (SQLException e) {
+
+
+            } catch (Exception e) {
                 log.error(e.getMessage());
             }
-        try {
-            conn.close();} catch (SQLException e){log.error(e.getMessage());}
+      //  try {
+           // conn.close();} catch (SQLException e){log.error(e.getMessage());}
 
         }
 
@@ -612,15 +551,15 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
     }
 
 
-    private String calculateDataRate (ComplexEventChunk<StreamEvent> streamEventChunk) {
+    private String calculateDataRate (ComplexEventChunk<StreamEvent> streamEventChunk, Connection conn) {
         System.out.println("Inside DataRate %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%");
         System.out.println("siddhi app "+siddhiAppContextName);
         System.out.println("tuple "+ firstTupleTimeMapDataRate.get(siddhiAppContextName));
 
-        //Connection conn = null;     //Initiating the connection Variable
+
 
         synchronized (this) {
-            Connection conn = null;
+           // Connection conn = null;
 
 
             if (firstTupleTimeMapDataRate != null && firstTupleTimeMapDataRate.get(siddhiAppContextName) == -1) {
@@ -628,8 +567,8 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             }
             try {
 
-                Class.forName("com.mysql.jdbc.Driver");
-                conn = DriverManager.getConnection(DB_URL, USER, PASS);
+//                Class.forName("com.mysql.jdbc.Driver");
+//                conn = DriverManager.getConnection(DB_URL, USER, PASS);
                 Statement st = conn.createStatement();
                 System.out.println("Conn--------");
                 System.out.println(conn);
@@ -741,15 +680,15 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                 }
 
 
-                // conn.close();
 
 
-            } catch (ClassNotFoundException e) {
-            } catch (SQLException e) {
+
+
+            } catch (Exception e) {
                 log.error(e.getMessage());
             }
-            try {
-                conn.close();} catch (SQLException e){log.error(e.getMessage());}
+          //  try {
+            //    conn.close();} catch (SQLException e){log.error(e.getMessage());}
 
         }
 
