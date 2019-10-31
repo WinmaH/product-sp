@@ -285,7 +285,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
         if (!firstTupleTimeMapDataRate.containsKey(siddhiAppContextName)) {
             firstTupleTimeMapDataRate.put(siddhiAppContextName, -1L);
         }
-
+//
         try {
 
             if (conn == null) {
@@ -350,6 +350,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                 break;
             case "datarate" :
                 calculateDataRate(streamEventChunk, conn);
+                break;
             default:
                 log.error("executionType should be either throughput or latency or both "
                         + "but found" + " " + executionType);
@@ -373,7 +374,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
 
         synchronized (this) {
-//            Connection conn = null;
+           // Connection conn = null;
 
             if (firstTupleTimeMap != null && firstTupleTimeMap.get(siddhiAppContextName) == -1) {
                 firstTupleTimeMap.put(siddhiAppContextName,System.currentTimeMillis());
@@ -542,8 +543,8 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             } catch (Exception e) {
                 log.error(e.getMessage());
             }
-      //  try {
-           // conn.close();} catch (SQLException e){log.error(e.getMessage());}
+//        try {
+//            conn.close();} catch (SQLException e){log.error(e.getMessage());}
 
         }
 
@@ -559,14 +560,14 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
 
         synchronized (this) {
-           // Connection conn = null;
+//            Connection conn = null;
 
 
             if (firstTupleTimeMapDataRate != null && firstTupleTimeMapDataRate.get(siddhiAppContextName) == -1) {
                 firstTupleTimeMapDataRate.put(siddhiAppContextName,System.currentTimeMillis());
             }
             try {
-
+//
 //                Class.forName("com.mysql.jdbc.Driver");
 //                conn = DriverManager.getConnection(DB_URL, USER, PASS);
                 Statement st = conn.createStatement();
@@ -608,8 +609,8 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                             }
 
 
-                            eventCountTotalMapDataRate.put(siddhiAppContextName, eventCountTotalMap.get(siddhiAppContextName)+1);
-                            eventCountMapDataRate.put(siddhiAppContextName,eventCountMap.get(siddhiAppContextName)+1);
+                            eventCountTotalMapDataRate.put(siddhiAppContextName, eventCountTotalMapDataRate.get(siddhiAppContextName)+1);
+                            eventCountMapDataRate.put(siddhiAppContextName,eventCountMapDataRate.get(siddhiAppContextName)+1);
 
 
                             long currentTime = System.currentTimeMillis();
@@ -687,8 +688,8 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             } catch (Exception e) {
                 log.error(e.getMessage());
             }
-          //  try {
-            //    conn.close();} catch (SQLException e){log.error(e.getMessage());}
+//            try {
+//                conn.close();} catch (SQLException e){log.error(e.getMessage());}
 
         }
 
